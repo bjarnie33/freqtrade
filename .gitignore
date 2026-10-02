@@ -122,3 +122,8 @@ target/
 !config_examples/config_freqai.example.json
 
 docker-compose-*.yml
+
+# Include strategy source code
+!user_data/strategies/
+user_data/strategies/*
+!user_data/strategies/*.py
