@@ -1,0 +1,14 @@
+services:
+  paper:
+    image: freqtradeorg/freqtrade:stable
+    restart: unless-stopped
+    volumes:
+      - ./user_data:/freqtrade/user_data
+    ports:
+      - "127.0.0.1:8082:8082"
+    command: >-
+      trade --config /freqtrade/user_data/config.json
+      --config /freqtrade/user_data/config.paper.json
+      --strategy AuditedPaperStrategy
+      --db-url sqlite:////freqtrade/user_data/paper_trades.sqlite
+      --logfile /freqtrade/user_data/logs/paper.log

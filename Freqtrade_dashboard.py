@@ -41,15 +41,14 @@ except ImportError:
 
 app = Flask(__name__)
 
-FT_API_URL = os.environ.get("FREQTRADE_API_URL", "http://127.0.0.1:8081")
-FT_USERNAME = os.environ.get("FREQTRADE_USERNAME")
-FT_PASSWORD = os.environ.get("FREQTRADE_PASSWORD")
+FT_API_URL = os.environ.get("FREQTRADE_PAPER_API_URL", "http://127.0.0.1:8082")
+FT_USERNAME = os.environ.get("FREQTRADE_PAPER_USERNAME", "bjarni")
+FT_PASSWORD = os.environ.get("FREQTRADE_PAPER_PASSWORD")
 
 TESTNET_BASE_URL = "https://testnet.binance.vision"
 
 AVAILABLE_SYMBOLS = [
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-    "DOGEUSDT", "ADAUSDT", "DOTUSDT", "LTCUSDT", "LINKUSDT",
+    "BTCUSDT", "ETHUSDT",
 ]
 
 if not FT_USERNAME or not FT_PASSWORD:
@@ -230,7 +229,7 @@ DASHBOARD_HTML = """
 <html lang="is">
 <head>
 <meta charset="UTF-8">
-<title>Freqtrade - Mælaborð</title>
+<title>Freqtrade PAPER - Mælaborð</title>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root { color-scheme: dark; }
@@ -501,5 +500,5 @@ setInterval(loadKlines, 30000);
 if __name__ == "__main__":
     print("Innskráning á Freqtrade API...")
     login()
-    print("Tekst! Mælaborð keyrir á http://localhost:5050")
-    app.run(host="127.0.0.1", port=5050, debug=False)
+    print("Tekst! Mælaborð keyrir á http://localhost:5051")
+    app.run(host="127.0.0.1", port=5051, debug=False)

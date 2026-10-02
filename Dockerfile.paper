@@ -1,0 +1,3 @@
+FROM freqtradeorg/freqtrade:stable
+COPY requirements-research.txt /tmp/requirements-research.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-research.txt
