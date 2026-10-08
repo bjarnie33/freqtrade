@@ -41,15 +41,14 @@ except ImportError:
 
 app = Flask(__name__)
 
-FT_API_URL = os.environ.get("FREQTRADE_API_URL", "http://127.0.0.1:8081")
-FT_USERNAME = os.environ.get("FREQTRADE_USERNAME")
-FT_PASSWORD = os.environ.get("FREQTRADE_PASSWORD")
+FT_API_URL = os.environ.get("FREQTRADE_PAPER_API_URL", "http://127.0.0.1:8082")
+FT_USERNAME = os.environ.get("FREQTRADE_PAPER_USERNAME", "bjarni")
+FT_PASSWORD = os.environ.get("FREQTRADE_PAPER_PASSWORD")
 
 TESTNET_BASE_URL = "https://testnet.binance.vision"
 
 AVAILABLE_SYMBOLS = [
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-    "DOGEUSDT", "ADAUSDT", "DOTUSDT", "LTCUSDT", "LINKUSDT",
+    "BTCUSDT", "ETHUSDT",
 ]
 
 if not FT_USERNAME or not FT_PASSWORD:
@@ -103,78 +102,6 @@ def api_performance():
             "best_pair": profit.get("best_pair", "-"),
             "best_pair_profit_pct": profit.get("best_pair_profit_ratio", 0) * 100,
             "avg_duration": profit.get("avg_duration", "-"),
-        })
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 502
-
-
-# --- Samanburður: sömu viðskipti með Binance- og Coinbase-gjöldum ---
-# Gjöldin eru hlutfall (0.001 = 0,1%, 0.005 = 0,5%) og eru á HVORA hlið (kaup og sala).
-# Má breyta í .env: COMPARE_FEE_BINANCE=0.001 og COMPARE_FEE_COINBASE=0.005
-EXCHANGE_FEES = [
-    {"key": "binance", "name": "Binance", "fee": float(os.environ.get("COMPARE_FEE_BINANCE", "0.001"))},
-    {"key": "coinbase", "name": "Coinbase", "fee": float(os.environ.get("COMPARE_FEE_COINBASE", "0.005"))},
-]
-
-
-def _net_profit(amount, open_rate, close_rate, fee):
-    """Hagnaður í USDT eftir gjöld á báðum hliðum, og kostnaðarverð (með kaupgjaldi)."""
-    cost = amount * open_rate * (1 + fee)
-    proceeds = amount * close_rate * (1 - fee)
-    return proceeds - cost, cost
-
-
-@app.route("/api/exchange-compare")
-def api_exchange_compare():
-    """Endurreiknar sömu viðskipti (sömu kaup- og söluverð) með gjöldum hverrar kauphallar.
-    Þetta er EKKI ný hermun: merki og verð eru þau sömu, bara gjöldin breytast."""
-    try:
-        closed, offset = [], 0
-        for _ in range(40):  # öryggismörk: mest 40 síður x 500 viðskipti
-            page = ft_get(f"/api/v1/trades?limit=500&offset={offset}")
-            trades = page.get("trades", [])
-            closed += [t for t in trades if t.get("is_open") is False and t.get("close_rate")]
-            offset += len(trades)
-            if not trades or offset >= page.get("total_trades", 0):
-                break
-
-        open_trades = [t for t in ft_get("/api/v1/status") if t.get("current_rate")]
-
-        booked = sum(float(t.get("close_profit_abs") or 0) for t in closed)
-        booked_fee = closed[0].get("fee_open") if closed else None
-
-        result = []
-        for ex in EXCHANGE_FEES:
-            fee = ex["fee"]
-            pnl, pcts = [], []
-            for t in closed:
-                net, cost = _net_profit(t["amount"], t["open_rate"], t["close_rate"], fee)
-                pnl.append(net)
-                pcts.append(net / cost * 100 if cost else 0.0)
-            wins = sum(1 for x in pnl if x > 0)
-            unrealized = sum(
-                _net_profit(t["amount"], t["open_rate"], t["current_rate"], fee)[0]
-                for t in open_trades
-                if t.get("amount") and t.get("open_rate")
-            )
-            result.append({
-                "key": ex["key"],
-                "name": ex["name"],
-                "fee_pct": fee * 100,
-                "closed": len(pnl),
-                "wins": wins,
-                "losses": len(pnl) - wins,
-                "winrate": (wins / len(pnl) * 100) if pnl else None,
-                "closed_pnl": sum(pnl),
-                "avg_pct": (sum(pcts) / len(pcts)) if pcts else None,
-                "open_count": len(open_trades),
-                "open_pnl": unrealized,
-                "total_pnl": sum(pnl) + unrealized,
-            })
-        return jsonify({
-            "exchanges": result,
-            "booked_pnl": booked,
-            "booked_fee_pct": (booked_fee * 100) if booked_fee is not None else None,
         })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 502
@@ -302,7 +229,7 @@ DASHBOARD_HTML = """
 <html lang="is">
 <head>
 <meta charset="UTF-8">
-<title>Freqtrade - Mælaborð</title>
+<title>Freqtrade PAPER - Mælaborð</title>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root { color-scheme: dark; }
@@ -346,7 +273,6 @@ DASHBOARD_HTML = """
   th { color: #8a8f98; font-weight: 500; }
   .pnl-pos { color: #26a69a; font-weight: 600; }
   .pnl-neg { color: #ef5350; font-weight: 600; }
-  .compare-panel { padding: 12px 20px; border-bottom: 1px solid #1e2128; background: #0d0f13; }
   .summary-bar { display: flex; gap: 24px; padding: 10px 20px; background: #0d0f13; border-bottom: 1px solid #1e2128; }
 </style>
 </head>
@@ -375,15 +301,6 @@ DASHBOARD_HTML = """
     <div class="stat"><span class="label">Sigurhlutfall</span><span class="value" id="perfWinrate">--</span></div>
     <div class="stat"><span class="label">Lokuð viðskipti (unnin / töpuð)</span><span class="value" id="perfTrades">--</span></div>
     <div class="stat"><span class="label">Besta mynt</span><span class="value" id="perfBest">--</span></div>
-  </div>
-
-  <div class="compare-panel">
-    <div class="panel-title"><span>Binance vs. Coinbase &mdash; sömu viðskipti, ólík gjöld</span><span id="cmpNote" style="color:#8a8f98;font-weight:400;"></span></div>
-    <table>
-      <thead><tr><th></th><th id="cmpHeadBinance">Binance</th><th id="cmpHeadCoinbase">Coinbase</th><th>Munur</th></tr></thead>
-      <tbody id="cmpBody"><tr><td colspan="4" style="color:#8a8f98;">Sæki gögn...</td></tr></tbody>
-    </table>
-    <div style="color:#8a8f98;font-size:11px;margin-top:6px;">Sömu kaup- og söluverð endurreiknuð með gjöldum hvorrar kauphallar á báðar hliðar. Ekki ný hermun: merki og verð eru óbreytt.</div>
   </div>
 
   <div class="main">
@@ -521,42 +438,6 @@ async function loadPerformance() {
   document.getElementById('perfBest').textContent = d.best_pair + ' (' + fmtPct(d.best_pair_profit_pct) + ')';
 }
 
-async function loadExchangeCompare() {
-  try {
-    const res = await fetch('/api/exchange-compare');
-    const d = await res.json();
-    const body = document.getElementById('cmpBody');
-    if (d.error) { body.innerHTML = '<tr><td colspan="4" style="color:#ef5350;">Villa: ' + d.error + '</td></tr>'; return; }
-    const b = d.exchanges.find(e => e.key === 'binance');
-    const c = d.exchanges.find(e => e.key === 'coinbase');
-    document.getElementById('cmpHeadBinance').textContent = 'Binance (' + b.fee_pct.toFixed(2) + '%)';
-    document.getElementById('cmpHeadCoinbase').textContent = 'Coinbase (' + c.fee_pct.toFixed(2) + '%)';
-    if (d.booked_fee_pct !== null) {
-      document.getElementById('cmpNote').textContent = 'Botninn skráði sjálfur: ' + d.booked_pnl.toFixed(2) + ' USDT (gjald ' + d.booked_fee_pct.toFixed(2) + '%)';
-    }
-    const money = (v) => (v >= 0 ? '+' : '') + v.toFixed(2) + ' USDT';
-    const cls = (v) => v >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const pct = (v) => v === null ? '-' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
-    const wr = (v) => v === null ? '-' : v.toFixed(1) + '%';
-    const rows = [
-      ['Lokuð viðskipti', b.closed, c.closed, null],
-      ['Unnin / töpuð', b.wins + ' / ' + b.losses, c.wins + ' / ' + c.losses, null],
-      ['Sigurhlutfall', wr(b.winrate), wr(c.winrate), (b.winrate !== null) ? (c.winrate - b.winrate).toFixed(1) + ' pp' : '-'],
-      ['Meðaltal á viðskipti', pct(b.avg_pct), pct(c.avg_pct), (b.avg_pct !== null) ? (c.avg_pct - b.avg_pct).toFixed(2) + ' pp' : '-'],
-      ['Hagnaður/tap, lokuð', money(b.closed_pnl), money(c.closed_pnl), money(c.closed_pnl - b.closed_pnl)],
-      ['Fljótandi, ' + b.open_count + ' opnar stöður', money(b.open_pnl), money(c.open_pnl), money(c.open_pnl - b.open_pnl)],
-      ['Samtals', money(b.total_pnl), money(c.total_pnl), money(c.total_pnl - b.total_pnl)],
-    ];
-    const colored = new Set([4, 5, 6]);
-    body.innerHTML = rows.map((r, i) => {
-      const bc = colored.has(i) ? ' class="' + cls(i === 4 ? b.closed_pnl : i === 5 ? b.open_pnl : b.total_pnl) + '"' : '';
-      const cc = colored.has(i) ? ' class="' + cls(i === 4 ? c.closed_pnl : i === 5 ? c.open_pnl : c.total_pnl) + '"' : '';
-      const bold = i === 6 ? ' style="font-weight:700;"' : '';
-      return '<tr' + bold + '><td>' + r[0] + '</td><td' + bc + '>' + r[1] + '</td><td' + cc + '>' + r[2] + '</td><td style="color:#8a8f98;">' + (r[3] === null ? '' : r[3]) + '</td></tr>';
-    }).join('');
-  } catch (e) { console.error(e); }
-}
-
 async function loadOpenTrades() {
   const res = await fetch('/api/open-trades');
   const trades = await res.json();
@@ -601,7 +482,6 @@ loadTicker();
 loadDepth();
 loadSummary();
 loadPerformance();
-loadExchangeCompare();
 loadOpenTrades();
 loadClosedTrades();
 
@@ -609,7 +489,6 @@ setInterval(loadTicker, 2000);
 setInterval(loadDepth, 2000);
 setInterval(loadSummary, 3000);
 setInterval(loadPerformance, 10000);
-setInterval(loadExchangeCompare, 10000);
 setInterval(loadOpenTrades, 3000);
 setInterval(loadClosedTrades, 8000);
 setInterval(loadKlines, 30000);
@@ -621,5 +500,5 @@ setInterval(loadKlines, 30000);
 if __name__ == "__main__":
     print("Innskráning á Freqtrade API...")
     login()
-    print("Tekst! Mælaborð keyrir á http://localhost:5050")
-    app.run(host="127.0.0.1", port=5050, debug=False)
+    print("Tekst! Mælaborð keyrir á http://localhost:5051")
+    app.run(host="127.0.0.1", port=5051, debug=False)

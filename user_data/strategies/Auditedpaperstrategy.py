@@ -79,14 +79,20 @@ class AuditedPaperStrategy(IStrategy):
         return d
 
     def populate_entry_trend(self,dataframe,metadata):
-        condition=(dataframe.model_probability>.6) if self.model is not None else (dataframe.rsi_14<50)
+        # RSI 30/70 í stað 50/50 - merkið undir 50 helst virkt í mjög
+        # langan, samfelldan tíma (RSI er undir 50 u.þ.b. helming allra
+        # tímapunkta), sem olli því að Freqtrade reyndi kaup endurtekið á
+        # hverri lykkju þar til daglega samþykktarmarkið (10) kláraðist á
+        # örfáum mínútum. Strangara viðmið gefur sjaldgæfari, markvissari
+        # merki - sama lexía og við lærðum með aðalbotninn (SimpleRSIStrategy).
+        condition=(dataframe.model_probability>.6) if self.model is not None else (dataframe.rsi_14<30)
         dataframe['enter_long']=0
         dataframe.loc[condition & (dataframe.volume>0),'enter_long']=1
         dataframe['enter_tag']=self.model_version
         return dataframe
 
     def populate_exit_trend(self,dataframe,metadata):
-        condition=(dataframe.model_probability<.4) if self.model is not None else (dataframe.rsi_14>50)
+        condition=(dataframe.model_probability<.4) if self.model is not None else (dataframe.rsi_14>70)
         dataframe['exit_long']=0
         dataframe.loc[condition & (dataframe.volume>0),'exit_long']=1
         return dataframe
