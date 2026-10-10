@@ -216,7 +216,10 @@ def api_open_trades():
 @app.route("/api/closed-trades")
 def api_closed_trades():
     try:
-        data = ft_get("/api/v1/trades?limit=30")
+        data = ft_get("/api/v1/trades?limit=500")
+        closed_all = [t for t in data.get("trades", []) if t.get("is_open") is False]
+        closed_all.sort(key=lambda t: t.get("close_timestamp") or t.get("trade_id") or 0, reverse=True)
+        data = {"trades": closed_all[:30]}
         trades = [
             {
                 "pair": t.get("pair"),
@@ -236,6 +239,20 @@ def api_closed_trades():
 
 
 # --- Binance testnet - kertagraf og pöntunarbók (sömu gögn og Freqtrade sjálft notar) ---
+
+@app.route("/api/symbols")
+def api_symbols():
+    """Pörin sem botninn er raunverulega með (úr Freqtrade /whitelist). Fellilistinn sýnir þannig aldrei
+    annað en það sem botninn verslar með. Ef Freqtrade svarar ekki er notaður fastur varalisti."""
+    try:
+        wl = ft_get("/api/v1/whitelist").get("whitelist", [])
+        syms = [p.split(":")[0].replace("/", "") for p in wl if "/" in p]
+        if syms:
+            return jsonify({"symbols": syms, "source": "freqtrade"})
+    except Exception:
+        pass
+    return jsonify({"symbols": AVAILABLE_SYMBOLS, "source": "fallback"})
+
 
 @app.route("/api/ticker/<symbol>")
 def api_ticker(symbol):
@@ -351,6 +368,7 @@ DASHBOARD_HTML = """
 </style>
 </head>
 <body>
+<div id="staleBanner" style="display:none;background:#b71c1c;color:#fff;padding:7px 20px;font-size:13px;font-weight:600;"></div>
 
   <div class="topbar">
     <div class="symbol-picker">
@@ -402,17 +420,21 @@ DASHBOARD_HTML = """
   <div class="bottom">
     <div class="bottom-panel">
       <div class="panel-title"><span>Opnar stöður (Freqtrade)</span></div>
+      <div style="max-height:340px;overflow-y:auto;">
       <table>
         <thead><tr><th>Mynt</th><th>Kaupverð → Núverandi</th><th>Hagnaður/Tap</th></tr></thead>
         <tbody id="openTradesBody"><tr><td colspan="3" style="color:#8a8f98;">Engar opnar stöður...</td></tr></tbody>
       </table>
+      </div>
     </div>
     <div class="bottom-panel">
       <div class="panel-title"><span>Lokuð viðskipti (Freqtrade)</span></div>
+      <div style="max-height:340px;overflow-y:auto;">
       <table>
         <thead><tr><th>Mynt</th><th>Ástæða</th><th>Verð</th><th>Hagnaður/Tap</th></tr></thead>
         <tbody id="closedTradesBody"><tr><td colspan="4" style="color:#8a8f98;">Engin lokuð viðskipti ennþá...</td></tr></tbody>
       </table>
+      </div>
     </div>
   </div>
 
@@ -449,18 +471,43 @@ async function loadKlines() {
   chart.timeScale().fitContent();
 }
 
-async function loadTicker() {
-  const res = await fetch(`/api/ticker/${currentSymbol}`);
-  const d = await res.json();
-  if (d.error) return;
-  const priceEl = document.getElementById('lastPrice');
-  const cls = d.price_change_pct >= 0 ? 'up' : 'down';
-  const sign = d.price_change_pct >= 0 ? '+' : '';
-  priceEl.innerHTML = `$${d.last_price.toLocaleString('en-US', {maximumFractionDigits: 6})} <span class="${cls}" style="font-size:12px">${sign}${d.price_change_pct.toFixed(2)}%</span>`;
-  document.getElementById('statVolume').textContent = '$' + (d.volume_quote / 1e6).toFixed(2) + 'M';
-  document.getElementById('statHigh').textContent = '$' + d.high.toLocaleString('en-US', {maximumFractionDigits: 6});
-  document.getElementById('statLow').textContent = '$' + d.low.toLocaleString('en-US', {maximumFractionDigits: 6});
+// --- stale-start
+let lastTickerOk = Date.now();
+let lastTickerAt = new Date().toLocaleTimeString('is-IS');
+function setStale(isStale) {
+  const b = document.getElementById('staleBanner');
+  const p = document.getElementById('lastPrice');
+  if (isStale) {
+    b.textContent = 'Engin ný gögn síðan ' + lastTickerAt + ' - gangan til netþjónsins eða markaðsgögnin svara ekki. Verðið sem sést er gamalt.';
+    b.style.display = 'block';
+    p.style.opacity = '0.35';
+  } else {
+    b.style.display = 'none';
+    p.style.opacity = '1';
+  }
 }
+function checkStale() { if (Date.now() - lastTickerOk > 15000) setStale(true); }
+async function loadTicker() {
+  try {
+    const res = await fetch(`/api/ticker/${currentSymbol}`);
+    const d = await res.json();
+    if (d.error) throw new Error(d.error);
+    const priceEl = document.getElementById('lastPrice');
+    const cls = d.price_change_pct >= 0 ? 'up' : 'down';
+    const sign = d.price_change_pct >= 0 ? '+' : '';
+    priceEl.innerHTML = `$${d.last_price.toLocaleString('en-US', {maximumFractionDigits: 6})} <span class="${cls}" style="font-size:12px">${sign}${d.price_change_pct.toFixed(2)}%</span>`;
+    document.getElementById('statVolume').textContent = '$' + (d.volume_quote / 1e6).toFixed(2) + 'M';
+    document.getElementById('statHigh').textContent = '$' + d.high.toLocaleString('en-US', {maximumFractionDigits: 6});
+    document.getElementById('statLow').textContent = '$' + d.low.toLocaleString('en-US', {maximumFractionDigits: 6});
+    lastTickerOk = Date.now();
+    lastTickerAt = new Date().toLocaleTimeString('is-IS');
+    setStale(false);
+  } catch (e) {
+    checkStale();
+  }
+}
+setInterval(checkStale, 3000);
+// --- stale-end
 
 function renderBookSide(container, rows, side) {
   const maxTotal = Math.max(...rows.map(r => r.total), 1);
@@ -557,6 +604,12 @@ async function loadExchangeCompare() {
   } catch (e) { console.error(e); }
 }
 
+function fmtPrice(x) {
+  if (x === null || x === undefined || isNaN(x)) return '-';
+  const a = Math.abs(x);
+  return a >= 100 ? x.toFixed(2) : a >= 1 ? x.toFixed(4) : x.toPrecision(4);
+}
+
 async function loadOpenTrades() {
   const res = await fetch('/api/open-trades');
   const trades = await res.json();
@@ -567,7 +620,7 @@ async function loadOpenTrades() {
   }
   body.innerHTML = trades.map(t => {
     const cls = t.profit_pct >= 0 ? 'pnl-pos' : 'pnl-neg';
-    return `<tr><td>${t.pair}</td><td>${t.open_rate?.toFixed(4)} → ${t.current_rate?.toFixed(4)}</td>
+    return `<tr><td>${t.pair}</td><td>${fmtPrice(t.open_rate)} → ${fmtPrice(t.current_rate)}</td>
       <td class="${cls}">${(t.profit_pct * 100).toFixed(2)}%</td></tr>`;
   }).join('');
 }
@@ -583,10 +636,25 @@ async function loadClosedTrades() {
   body.innerHTML = trades.map(t => {
     const cls = t.profit_pct >= 0 ? 'pnl-pos' : 'pnl-neg';
     return `<tr><td>${t.pair}</td><td>${t.exit_reason}</td>
-      <td>${t.open_rate?.toFixed(4)} → ${t.close_rate?.toFixed(4)}</td>
+      <td>${fmtPrice(t.open_rate)} → ${fmtPrice(t.close_rate)}</td>
       <td class="${cls}">${t.profit_pct >= 0 ? '+' : ''}${t.profit_pct.toFixed(2)}%</td></tr>`;
   }).join('');
 }
+
+// --- symbols-start
+async function loadSymbols() {
+  try {
+    const res = await fetch('/api/symbols');
+    const d = await res.json();
+    if (!d.symbols || !d.symbols.length) return;
+    const sel = document.getElementById('symbolSelect');
+    const keep = d.symbols.includes(currentSymbol) ? currentSymbol : d.symbols[0];
+    sel.innerHTML = d.symbols.map(s => `<option value="${s}">${s.slice(0, -4)}-${s.slice(-4)}</option>`).join('');
+    sel.value = keep;
+    currentSymbol = keep;
+  } catch (e) { console.error(e); }
+}
+// --- symbols-end
 
 document.getElementById('symbolSelect').addEventListener('change', (e) => {
   currentSymbol = e.target.value;
@@ -596,9 +664,8 @@ document.getElementById('symbolSelect').addEventListener('change', (e) => {
 });
 
 initChart();
-loadKlines();
-loadTicker();
-loadDepth();
+loadSymbols().then(() => { loadKlines(); loadTicker(); loadDepth(); });
+setInterval(loadSymbols, 60000);
 loadSummary();
 loadPerformance();
 loadExchangeCompare();
@@ -619,7 +686,14 @@ setInterval(loadKlines, 30000);
 """
 
 if __name__ == "__main__":
+    host = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
+    port = int(os.environ.get("DASHBOARD_PORT", "5050"))
     print("Innskráning á Freqtrade API...")
-    login()
-    print("Tekst! Mælaborð keyrir á http://localhost:5050")
-    app.run(host="127.0.0.1", port=5050, debug=False)
+    try:
+        login()
+        print("Innskráning tókst.")
+    except Exception as exc:
+        # Freqtrade er kannski ekki tilbúið (t.d. rétt eftir endurræsingu) - hver beiðni reynir aftur sjálf.
+        print(f"Gat ekki skráð inn strax ({exc}) - reyni aftur sjálfkrafa.")
+    print(f"Mælaborð keyrir á http://{host}:{port}")
+    app.run(host=host, port=port, debug=False)

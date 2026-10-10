@@ -29,6 +29,20 @@ class AuditedPaperStrategy(IStrategy):
             raise ValueError('AuditedPaperStrategy requires dry_run=true and spot')
         super().__init__(config)
         self.root=Path(config['user_data_dir'])
+        # Áhættumörkin koma úr venjulegu Freqtrade-stillingunum (max_open_trades, stake_amount), svo ein tala ræður.
+        # Sjálfgefin gildi (engar stillingar): 50 USDT á viðskipti, 3 opnar stöður, 50 USDT dagleg töp, 10 kaup á dag.
+        def _num(v,default):
+            try:
+                v=float(v)
+                return v if math.isfinite(v) and v>0 else default
+            except (TypeError,ValueError):
+                return default
+        self.limit_stake=_num(config.get('stake_amount'),50.)             # 'unlimited' -> 50
+        self.limit_open=int(_num(config.get('max_open_trades'),3))        # -1 / vantar -> 3
+        self.limit_daily_loss=max(50.,.1*self.limit_stake*self.limit_open)  # 10% af mestu áhættu, aldrei undir 50
+        self.limit_approvals=10 if self.limit_open<=3 else 4*self.limit_open  # 4 kaup á dag fyrir hverja stöðu
+        self._last_reject={}   # pair -> (ástæða, kerti): sama höfnun er skráð einu sinni á kerti
+        self._seen_candle={}   # pair -> síðasta kerti sem þegar er vistað (sparar gagnagrunnsskrif)
         self.audit_path=self.root/'paper_audit.sqlite'
         self.model=None
         self.model_version='rsi-research-v1'
@@ -127,8 +141,11 @@ class AuditedPaperStrategy(IStrategy):
             for pair in self.dp.current_whitelist():
                 try:
                     payload=self._snapshot(pair,current_time)
+                    if self._seen_candle.get(pair)==payload['candle_open_time']:
+                        continue
                     with self._db() as db:
                         db.execute('INSERT OR IGNORE INTO candles VALUES(?,?,?)',(pair,payload['candle_open_time'],json.dumps(payload,allow_nan=False)))
+                    self._seen_candle[pair]=payload['candle_open_time']
                 except Exception:
                     log.exception('Paper candle audit failed for %s',pair)
         except Exception:
@@ -137,7 +154,7 @@ class AuditedPaperStrategy(IStrategy):
     def custom_stake_amount(self,pair,current_time,current_rate,proposed_stake,min_stake,max_stake,leverage,entry_tag,side,**kwargs):
         if not self._mode_ok() or side!='long' or leverage!=1:
             return 0.
-        stake=min(50.,proposed_stake,max_stake)
+        stake=min(self.limit_stake,proposed_stake,max_stake)
         return stake if stake >= (min_stake or 0) else 0.
 
     def confirm_trade_entry(self,pair,order_type,amount,rate,time_in_force,current_time,entry_tag,side,**kwargs):
@@ -160,14 +177,23 @@ class AuditedPaperStrategy(IStrategy):
             if not all(math.isfinite(x) and x>0 for x in [amount,rate,cost]): reason='invalid_size'
             elif side!='long': reason='long_only'
             elif (self.root/'EMERGENCY_STOP').exists(): reason='emergency_stop'
-            elif cost>50.000001: reason='stake_limit'
+            elif cost>self.limit_stake+1e-6: reason='stake_limit'
             elif cost*(1+float(self.config.get('fee',.001)))>free: reason='balance_limit'
-            elif len(opened)>=3: reason='open_trade_limit'
-            elif losses<=-50: reason='daily_realized_loss_limit'
-            elif approvals>=10: reason='daily_entry_approval_limit'
+            elif len(opened)>=self.limit_open: reason='open_trade_limit'
+            elif losses<=-self.limit_daily_loss: reason='daily_realized_loss_limit'
+            elif approvals>=self.limit_approvals: reason='daily_entry_approval_limit'
             elif self.model is not None and payload['model_probability'] is None: reason='model_unavailable'
             payload.update(reason=reason,proposed_cost=cost,free_balance=free,daily_gross_realized_losses=losses,open_trades=len(opened),entry_approvals=approvals,order_type=order_type,rate=rate,amount=amount)
             accepted=reason=='allowed'
+            if accepted:
+                self._last_reject.pop(pair,None)
+            else:
+                # Með mörgum myntum hafnar Freqtrade sama kaupum í hverri lykkju (á 5 sek. fresti). Skráum hverja
+                # höfnun (par + ástæða) einu sinni á kerti - annars fyllist gagnagrunnurinn (62 þús. raðir áður).
+                key=(reason,payload['candle_open_time'])
+                if self._last_reject.get(pair)==key:
+                    return False
+                self._last_reject[pair]=key
             self._write('entry',pair,current_time,accepted,payload)
             return accepted
         except Exception:
