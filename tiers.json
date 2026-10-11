@@ -19,7 +19,7 @@
         "name": "Advanced 1",
         "maker": 0.002,
         "taker": 0.004,
-        "min_volume": null
+        "min_volume": 10000
       },
       {
         "name": "Advanced 2",
