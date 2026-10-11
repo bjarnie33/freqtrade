@@ -67,6 +67,7 @@ def build_items(root):
         for p in sorted(sdir.glob("*.py")):
             svc = STRATEGY_SERVICE.get(p.name.lower())
             add(p, f"user_data/strategies/{p.name}", [svc] if svc else [], "restart")
+    add(root / "tiers.json", "tiers.json", [], "restart")        # throskuldar kaupholla; maelabordid les skrana beint (engin endurbygging)
     add(root / "Freqtrade_dashboard.py", "dashboard/Freqtrade_dashboard.py", ["dashboard"], "build")
     add(root / "Freqtrade_dashboard_paper.py", "dashboard/Freqtrade_dashboard_paper.py", ["dashboard_paper"], "build")
     return items
@@ -87,6 +88,21 @@ def validate(item):
             v = str(d.get("api_server", {}).get(k, ""))
             if any(ord(c) > 127 for c in v):
                 errs.append(f"{p.name}: api_server.{k} inniheldur íslenska/non-ASCII stafi (veldur 500-villu í innskráningu)")
+        if p.name == "tiers.json":
+            for ex, spec in d.items():
+                if str(ex).startswith("_") or not isinstance(spec, dict):
+                    continue
+                last = -1.0
+                for tier in spec.get("tiers", []):
+                    v = tier.get("min_volume")
+                    if v is None:
+                        continue
+                    if not isinstance(v, (int, float)) or v < 0:
+                        errs.append(f"tiers.json: {ex}/{tier.get('name')}: min_volume verdur ad vera tala >= 0 eda null")
+                    elif v < last:
+                        errs.append(f"tiers.json: {ex}/{tier.get('name')}: min_volume ({v}) er LAGARA en i threpi a undan - throskuldar eiga ad haekka")
+                    else:
+                        last = v
     elif p.suffix == ".py":
         try:
             ast.parse(text)
@@ -169,7 +185,7 @@ def key_settings(cfg):
 def config_summary(items):
     """Sýnir lykilgildi í ólíkum config-skrám: netþjónn -> nýtt. Svo sést t.d. 'pör: 2 -> 126' ÁÐUR en nokkuð er sent."""
     for i in items:
-        if i["status"] == "eins" or not i["remote"].endswith(".json"):
+        if i["status"] == "eins" or not i["remote"].startswith("user_data/") or not i["remote"].endswith(".json"):
             continue
         try:
             new = key_settings(json.loads(i["local"].read_text(encoding="utf-8-sig")))
@@ -271,7 +287,7 @@ def push(items, assume_yes):
 
     names = " ".join(CONTAINER[s] for s in restart + build)
     if not names:
-        print("\nEngin þjónusta var endurræst (allt sem breyttist tilheyrir óvirkum þjónustum).")
+        print("\nEngin þjónusta var endurræst (skrárnar sem fóru yfir þurfa þess ekki, eða tilheyra óvirkum þjónustum).")
         return 0
     check = (f"sleep 20; docker ps --format 'table {{{{.Names}}}}\\t{{{{.Status}}}}'; "
              f"for c in {names}; do echo; echo -- $c; docker logs --since 2m $c 2>&1 | "

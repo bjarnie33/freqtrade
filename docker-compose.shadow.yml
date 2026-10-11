@@ -1,0 +1,28 @@
+# Skuggastilling: Claude radleggur um hvert nytt kaup, botninn HUNSAR svarid (hann kaupir eins og adur).
+#   cd ~/freqtrade && docker compose -f docker-compose.shadow.yml up -d --build
+# Lykill: ANTHROPIC_API_KEY i ~/freqtrade/.env (aldrei i spjall). Gagnagrunnar botnsins eru adeins LESNIR (mount :ro).
+name: freqtrade-shadow
+services:
+  shadow:
+    build: ./shadow
+    container_name: freqtrade-shadow
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      SHADOW_MODEL: "${SHADOW_MODEL:-claude-haiku-5-5}"
+      TRADES_DB: /ft/paper_trades.sqlite
+      AUDIT_DB: /ft/paper_audit.sqlite
+      SHADOW_DB: /data/shadow.sqlite
+      # Stillanlegt (sjalfgefin gildi i sviga) - breyttu og keyrdu up -d aftur:
+      # SHADOW_MAX_PER_DAY: "300"      # mest svona morg Claude-kall a solarhring (kostnadarvorn)
+      # SHADOW_POLL_SECONDS: "30"
+      # SHADOW_MAX_AGE_MIN: "10"       # adeins kaup opnud sidustu 10 min. (engin sagu-baksetning)
+    volumes:
+      - "./user_data:/ft:ro"
+      - "./shadow-data:/data"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

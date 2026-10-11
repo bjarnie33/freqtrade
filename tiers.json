@@ -1,0 +1,151 @@
+{
+  "_leidbeiningar": [
+    "Hvert threp: name, maker, taker (BROTEIKNIR: 0.0025 = 0,25%) og min_volume (USD, 30 daga velta, an kommu eda $).",
+    "COINBASE: gjold (maker/taker) eru ur 'Fees' flipanum (spot-dalkarnir). min_volume er null thar til thu fyllir inn throskulda af 'Tier requirements' flipanum.",
+    "Skiptu null fyrir tolu, t.d. \"min_volume\": 10000. Throskuldar eiga ad haekka fra Advanced 1 og upp i VIP 8. Intro helst 0.",
+    "BINANCE: gjold og throskuldar eru ur afleiddum heimildum 2026 - stadfestu a gjaldasidu Binance. bnb_discount er 25% afslattur ef gjold eru greidd i BNB.",
+    "Eftir breytingu: python sync_to_server.py --push (madelabordid les skrana strax, engin endurbygging).",
+    "Hafir thu enga throskulda: Coinbase helst i Intro i hermuninni og maelabordid segir hvad vantar."
+  ],
+  "coinbase": {
+    "tiers": [
+      {
+        "name": "Intro",
+        "maker": 0.0025,
+        "taker": 0.005,
+        "min_volume": 0.0
+      },
+      {
+        "name": "Advanced 1",
+        "maker": 0.002,
+        "taker": 0.004,
+        "min_volume": null
+      },
+      {
+        "name": "Advanced 2",
+        "maker": 0.0015,
+        "taker": 0.003,
+        "min_volume": null
+      },
+      {
+        "name": "Advanced 3",
+        "maker": 0.001,
+        "taker": 0.002,
+        "min_volume": null
+      },
+      {
+        "name": "VIP 1",
+        "maker": 0.0006,
+        "taker": 0.0016,
+        "min_volume": null
+      },
+      {
+        "name": "VIP 2",
+        "maker": 0.0003,
+        "taker": 0.0012,
+        "min_volume": null
+      },
+      {
+        "name": "VIP 3",
+        "maker": 0.0002,
+        "taker": 0.001,
+        "min_volume": null
+      },
+      {
+        "name": "VIP 4",
+        "maker": 0.0001,
+        "taker": 0.0008,
+        "min_volume": null
+      },
+      {
+        "name": "VIP 5",
+        "maker": 0.0,
+        "taker": 0.0006,
+        "min_volume": null
+      },
+      {
+        "name": "VIP 6",
+        "maker": 0.0,
+        "taker": 0.0004,
+        "min_volume": null
+      },
+      {
+        "name": "VIP 7",
+        "maker": 0.0,
+        "taker": 0.0003,
+        "min_volume": null
+      },
+      {
+        "name": "VIP 8",
+        "maker": 0.0,
+        "taker": 0.0002,
+        "min_volume": null
+      }
+    ]
+  },
+  "binance": {
+    "bnb_discount": 0.25,
+    "tiers": [
+      {
+        "name": "Regular",
+        "maker": 0.001,
+        "taker": 0.001,
+        "min_volume": 0.0
+      },
+      {
+        "name": "VIP 1",
+        "maker": 0.0009,
+        "taker": 0.001,
+        "min_volume": 1000000.0
+      },
+      {
+        "name": "VIP 2",
+        "maker": 0.0008,
+        "taker": 0.001,
+        "min_volume": 5000000.0
+      },
+      {
+        "name": "VIP 3",
+        "maker": 0.0004,
+        "taker": 0.0006,
+        "min_volume": 20000000.0
+      },
+      {
+        "name": "VIP 4",
+        "maker": 0.0004,
+        "taker": 0.00052,
+        "min_volume": 75000000.0
+      },
+      {
+        "name": "VIP 5",
+        "maker": 0.00025,
+        "taker": 0.00031,
+        "min_volume": 150000000.0
+      },
+      {
+        "name": "VIP 6",
+        "maker": 0.0002,
+        "taker": 0.00029,
+        "min_volume": 400000000.0
+      },
+      {
+        "name": "VIP 7",
+        "maker": 0.00019,
+        "taker": 0.00028,
+        "min_volume": 800000000.0
+      },
+      {
+        "name": "VIP 8",
+        "maker": 0.00016,
+        "taker": 0.00025,
+        "min_volume": 2000000000.0
+      },
+      {
+        "name": "VIP 9",
+        "maker": 0.00011,
+        "taker": 0.00023,
+        "min_volume": 4000000000.0
+      }
+    ]
+  }
+}
